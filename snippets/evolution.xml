@@ -52,6 +52,11 @@
            sync-j="4"
            fetch="https://bitbucket.org" />
 
+  <remote  name="codeberg"
+           sync-c="true"
+           sync-j="4"
+           fetch="https://codeberg.org" />
+
   <!-- Art -->
   <project path="art" name="art" groups="pdk" remote="evo" />
 
