@@ -1,0 +1,102 @@
+name: Build Evolution-X for Galaxy Note10 5G (d1x)
+
+on:
+workflow_dispatch: # 支持在 GitHub 页面手动点击按钮触发编译
+
+jobs:
+build:
+runs-on: ubuntu-22.04
+permissions:
+contents: write
+
+steps:
+
+- name: 1. 清理 Runner 磁盘空间 (获取～75GB+ 可用空间)
+uses: easimon/maximize-build-space@master
+with:
+root-reserve-mb: 20480
+swap-size-mb: 16384
+remove-dotnet: 'true'
+remove-android: 'true'
+remove-haskell: 'true'
+remove-codeql: 'true'
+remove-docker-images: 'true'
+- name: 2. 安装编译依赖与环境
+run: |
+sudo apt-get update
+sudo apt-get install -y 
+bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs 
+gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev 
+liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 
+libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev 
+openjdk-17-jdk python3 python3-pip
+- name: 3. 安装 Repo 工具
+run: |
+mkdir -p ~/bin
+curl [https://storage.googleapis.com/git-repo-downloads/repo](https://storage.googleapis.com/git-repo-downloads/repo) > ~/bin/repo
+chmod a+x ~/bin/repo
+sudo install -m 755 ~/bin/repo /usr/local/bin/repo
+- name: 4. 配置 Git 信息与 SSH
+env:
+SSH_PRIVATE_KEY: ${{secrets.SSH_PRIVATE_KEY}}
+run: |
+git config --global user.name "mcajun87"
+git config --global user.email "your_email@example.com"
+
+# 配置 SSH Key 用于访问 mcajun87 的私有 / 公有仓库
+
+if [ -n "\(SSH_PRIVATE_KEY" ]; then
+    mkdir -p ~/.ssh
+    echo "\)SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+chmod 600 ~/.ssh/id_ed25519
+ssh-keyscan [github.com](https://github.com) >> ~/.ssh/known_hosts
+fi
+- name: 5. 初始化 Evolution-X 源码与 Local Manifest
+run: |
+mkdir -p ~/evolution17
+cd ~/evolution17
+repo init -u [https://github.com/Evolution-X/manifest](https://github.com/Evolution-X/manifest) -b cnb --git-lfs
+
+# 写入本地 Manifest
+
+mkdir -p .repo/local_manifests
+cat << 'EOF' > .repo/local_manifests/mcajun87_d1x.xml
+
+  
+  <manifest>
+<remote name="mcajun87-ssh" fetch="git@github.com:mcajun87/" />
+<remote name="github" fetch="https://github.com/" />
+    <remove-project name="platform/packages/apps/Evolver" />
+<project path="packages/apps/Evolver" name="Evolver-Settings-App" remote="mcajun87-ssh" revision="main" />
+    <project path="device/samsung/d1x" name="android_device_samsung_d1x" remote="mcajun87-ssh" revision="cnb" />
+<project path="device/samsung/exynos9820-common" name="android_device_samsung_exynos9820-common" remote="mcajun87-ssh" revision="cnb" />
+    <project path="vendor/samsung/d1x" name="proprietary_vendor_samsung_d1x" remote="mcajun87-ssh" revision="cnb" />
+<project path="vendor/samsung/exynos9820-common" name="proprietary_vendor_samsung_exynos9820-common" remote="mcajun87-ssh" revision="cnb" />
+    <project path="hardware/samsung/slsi-linaro/exynos" name="android_hardware_samsung_slsi-linaro_exynos" remote="mcajun87-ssh" revision="cnb" />
+    <project path="kernel/samsung/exynos9820" name="Rocky7842/android_kernel_samsung_exynos9820" remote="github" revision="lineage-23.2" />
+    <project path="external/PhhIms" name="phhusson/platform_external_phhims" remote="github" revision="android-16.0" />
+</manifest>
+EOF
+# 挂载拉取代码
+
+repo sync -c -j$(nproc) --force-sync --no-clone-bundle --no-tags
+- name: 6. 集成 SukiSU-Ultra 到内核
+run: |
+cd ~/evolution17/kernel/samsung/exynos9820
+curl -LSs "[https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh](https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh)" | bash -s main
+- name: 7. 执行 ROM 编译
+run: |
+cd ~/evolution17
+source build/envsetup.sh
+lunch evo_d1x-userdebug
+mka evo -j$(nproc)
+- name: 8. 上传编译产物 (Release)
+uses: softprops/action-gh-release@v1
+with:
+tag_name: EvolutionX-d1x-${{ github.run_id }}
+name: Evolution-X Android 17 for Galaxy Note10 5G
+files: |
+~/evolution17/out/target/product/d1x/evolution_d1x-*.zip
+~/evolution17/out/target/product/d1x/recovery.img
+env:
+GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
