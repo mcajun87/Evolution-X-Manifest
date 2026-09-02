@@ -1,7 +1,7 @@
 name: Build Evolution-X for Galaxy Note10 5G (d1x)
 
 on:
-  workflow_dispatch: # 手动触发编译
+  workflow_dispatch:
 
 jobs:
   build:
@@ -10,18 +10,30 @@ jobs:
       contents: write
 
     steps:
-    - name: 1. 清理 Runner 磁盘空间
+    - name: 1. 最大化释放 Runner 磁盘空间（终极优化）
       uses: easimon/maximize-build-space@v10
       with:
-        root-reserve-mb: 20480
+        root-reserve-mb: 5120
         swap-size-mb: 16384
         remove-dotnet: 'true'
         remove-android: 'true'
         remove-haskell: 'true'
         remove-codeql: 'true'
         remove-docker-images: 'true'
+        remove-ghc: 'true'
+        remove-kotlin: 'true'
+        remove-mono: 'true'
 
-    - name: 2. 安装编译依赖与环境
+    - name: 2. 手动强制清理残余文件 & 打印磁盘状态
+      run: |
+        set -e
+        df -h
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost $AGENT_TOOLSDIRECTORY
+        docker system prune -a -f || true
+        sudo apt clean
+        df -h
+
+    - name: 3. 安装编译依赖（修复 Ubuntu22.04 废弃包）
       run: |
         set -e
         sudo apt-get update
@@ -32,7 +44,7 @@ jobs:
           libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev \
           openjdk-17-jdk python3 python3-pip
 
-    - name: 3. 安装 Repo 工具
+    - name: 4. 安装最新 Repo 工具
       run: |
         set -e
         mkdir -p ~/bin
@@ -40,14 +52,15 @@ jobs:
         chmod a+x ~/bin/repo
         sudo install -m 755 ~/bin/repo /usr/local/bin/repo
 
-    - name: 4. 配置 Git & SSH（私有仓库才需要）
+    - name: 5. 配置 Git 与 SSH 密钥
       env:
         SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       run: |
         set -e
         git config --global user.name "mcajun87"
         git config --global user.email "your_email@example.com"
-        
+        git config --global core.compression 0
+
         if [ -n "$SSH_PRIVATE_KEY" ]; then
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
@@ -55,7 +68,7 @@ jobs:
           ssh-keyscan github.com | tee ~/.ssh/known_hosts
         fi
 
-    - name: 5. 初始化 Evolution-X 源码 + Local Manifest
+    - name: 6. 初始化源码 + Local Manifest
       run: |
         set -e
         mkdir -p ~/evolution17
@@ -86,26 +99,27 @@ jobs:
         </manifest>
         EOF
 
-        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+        # 低并发、省空间同步（专治磁盘爆满）
+        repo sync -c -j2 --force-sync --no-clone-bundle --no-tags --no-repo-verify
 
-    - name: 6. 集成 SukiSU-Ultra 内核模块
+    - name: 7. 集成 SukiSU-Ultra 内核
       run: |
         set -e
         cd ~/evolution17/kernel/samsung/exynos9820
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
 
-    - name: 7. 启用 ccache 并编译 ROM
+    - name: 8. 编译 ROM（限并发防 OOM / 爆满）
       run: |
         set -e
         cd ~/evolution17
         export USE_CCACHE=1
         export CCACHE_DIR=~/.ccache
-        ccache -M 50G
+        ccache -M 20G
         source build/envsetup.sh
         lunch evo_d1x-userdebug
         mka evo -j4
 
-    - name: 8. 上传编译产物到 Release
+    - name: 9. 上传编译产物
       uses: softprops/action-gh-release@v1
       with:
         tag_name: EvolutionX-d1x-${{ github.run_id }}
