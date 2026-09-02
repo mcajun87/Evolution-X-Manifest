@@ -10,7 +10,7 @@ jobs:
       contents: write
 
     steps:
-    - name: 1. 最大化释放 Runner 磁盘空间（终极优化）
+    - name: 1. 最大化释放 Runner 磁盘空间
       uses: easimon/maximize-build-space@v10
       with:
         root-reserve-mb: 5120
@@ -20,9 +20,6 @@ jobs:
         remove-haskell: 'true'
         remove-codeql: 'true'
         remove-docker-images: 'true'
-        remove-ghc: 'true'
-        remove-kotlin: 'true'
-        remove-mono: 'true'
 
     - name: 2. 手动强制清理残余文件 & 打印磁盘状态
       run: |
@@ -99,16 +96,16 @@ jobs:
         </manifest>
         EOF
 
-        # 低并发、省空间同步（专治磁盘爆满）
         repo sync -c -j2 --force-sync --no-clone-bundle --no-tags --no-repo-verify
 
-    - name: 7. 集成 SukiSU-Ultra 内核
+    - name: 7. 集成 SukiSU‑Ultra 内核
       run: |
         set -e
         cd ~/evolution17/kernel/samsung/exynos9820
+        ls -la
         curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
 
-    - name: 8. 编译 ROM（限并发防 OOM / 爆满）
+    - name: 8. 编译 ROM
       run: |
         set -e
         cd ~/evolution17
